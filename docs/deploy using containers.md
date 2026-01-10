@@ -68,6 +68,8 @@ The configuration files may be modified to handle for machine-specific optimizat
     * Increase the generator count in [selflaunch config](../deploy/example_selflaunch.yaml)
   * Gameplay lags
     * Increase the hoster count in [selflaunch config](../deploy/example_selflaunch.yaml)
+  * Large number of players (50+)
+    * See [server connection configuration](server%20connection%20configuration.md) for details on connection limits and tuning
 
 Changes made to `docker-compose.yaml` can be applied by running `docker compose up -d`, while those made to other files are applied by running `docker compose restart`.
 
