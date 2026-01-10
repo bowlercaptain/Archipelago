@@ -228,10 +228,8 @@ class Context:
                       "compatibility": int}
     # Connection tracking structures - no hard limit on number of connections.
     # The server can handle as many concurrent connections as system resources allow.
-    # clients: team -> slot id -> list of clients authenticated to slot.
-    clients: typing.Dict[int, typing.Dict[int, typing.List[Client]]]
-    # endpoints: list of all active client connections (authenticated or not)
-    endpoints: list[Client]
+    clients: typing.Dict[int, typing.Dict[int, typing.List[Client]]]  # team -> slot id -> list of authenticated clients
+    endpoints: list[Client]  # list of all active client connections (authenticated or not)
     locations: LocationStore  # typing.Dict[int, typing.Dict[int, typing.Tuple[int, int, int]]]
     location_checks: typing.Dict[typing.Tuple[int, int], typing.Set[int]]
     hints_used: typing.Dict[typing.Tuple[int, int], int]

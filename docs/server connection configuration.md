@@ -19,7 +19,7 @@ The Archipelago MultiServer **does not impose a hard limit** on the maximum numb
 ### Connection Tracking
 
 The server tracks all active connections through:
-- `Context.endpoints` (list): All connected client endpoints
+- `Context.endpoints` (list): All connected client endpoints (list of Client objects)
 - `Context.clients` (dict): Clients organized by team and slot numbers
 
 ### WebSocket Library Parameters
@@ -163,7 +163,19 @@ Each connected client consumes memory for:
 
 **Symptom**: Clients cannot connect when many others are connecting simultaneously
 
-**Solution**: Increase `max_queue` parameter in `websockets.serve()` call
+**Solution**: Increase `max_queue` parameter in `websockets.serve()` call:
+
+```python
+# In MultiServer.py, around line 2720
+ctx.server = websockets.serve(
+    functools.partial(server, ctx=ctx),
+    host=ctx.host,
+    port=ctx.port,
+    ssl=ssl_context,
+    extensions=[server_per_message_deflate_factory],
+    max_queue=32,  # Increase from default 16
+)
+```
 
 ## Recommendations
 
