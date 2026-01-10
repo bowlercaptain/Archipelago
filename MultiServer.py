@@ -226,8 +226,11 @@ class Context:
                       "countdown_mode": str,
                       "item_cheat": bool,
                       "compatibility": int}
-    # team -> slot id -> list of clients authenticated to slot.
+    # Connection tracking structures - no hard limit on number of connections.
+    # The server can handle as many concurrent connections as system resources allow.
+    # clients: team -> slot id -> list of clients authenticated to slot.
     clients: typing.Dict[int, typing.Dict[int, typing.List[Client]]]
+    # endpoints: list of all active client connections (authenticated or not)
     endpoints: list[Client]
     locations: LocationStore  # typing.Dict[int, typing.Dict[int, typing.Tuple[int, int, int]]]
     location_checks: typing.Dict[typing.Tuple[int, int], typing.Set[int]]
@@ -893,6 +896,12 @@ def update_aliases(ctx: Context, team: int):
 
 
 async def server(websocket: "ServerConnection", path: str = "/", ctx: Context = None) -> None:
+    """
+    Handle a single client connection.
+    This function is called for each new WebSocket connection to the server.
+    There is no limit on the number of concurrent connections beyond system resources.
+    Each connection is handled asynchronously by the asyncio event loop.
+    """
     client = Client(websocket, ctx)
     ctx.endpoints.append(client)
 
@@ -2717,6 +2726,15 @@ async def main(args: argparse.Namespace):
 
     ssl_context = load_server_cert(args.cert, args.cert_key) if args.cert else None
 
+    # Initialize WebSocket server with default connection handling parameters.
+    # Note: There is no hard limit on the maximum number of parallel connections.
+    # The server relies on OS limits (file descriptors, memory) and asyncio's event loop.
+    # Key default parameters from websockets library:
+    #   - max_queue=16: Maximum pending connections in the accept queue
+    #   - max_size=1048576 (1MB): Maximum size for incoming messages
+    #   - ping_interval=20: Seconds between keepalive pings
+    #   - ping_timeout=20: Seconds to wait for pong response
+    # For more details, see docs/server connection configuration.md
     ctx.server = websockets.serve(
         functools.partial(server, ctx=ctx),
         host=ctx.host,
