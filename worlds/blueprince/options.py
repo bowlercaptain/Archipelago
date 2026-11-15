@@ -1,0 +1,665 @@
+from dataclasses import dataclass
+
+from .constants import *
+from .data_rooms import rooms
+
+from Options import (
+    Choice,
+    OptionGroup,
+    PerGameCommonOptions,
+    Range,
+    Toggle,
+    Visibility,
+    OptionCounter,
+)
+
+
+# Current "Sanity" options.
+
+class RoomDraftSanity(Toggle):
+    """
+    Room Draft Sanity puts every single room (sans a single one chosen at random) into the item pool.
+    Rooms can not be drafted until they are received from the item pool.
+
+    """
+
+    display_name = "Room Draft Sanity"
+
+    default = True
+
+    visibility = Visibility.all
+
+class StandardItemSanity(Toggle):
+    """
+    This option enables standard item sanity checks.
+    That is, standard items can not be picked up or used until they are unlocked.
+    """
+
+    display_name = "Standard Item Sanity"
+
+    default = True
+
+    visibility = Visibility.all
+
+class WorkshopSanity(Toggle):
+    """
+    Not Implemented - Dev Use Only.
+    This option enables workshop item sanity checks.
+    That is, workshop crafted items can not be crafted until they are unlocked.
+    """
+
+    display_name = "Dev: Workshop Sanity"
+
+    default = False
+
+    visibility = Visibility.all
+
+class UpgradeDiskSanity(Toggle):
+    """
+    This option enables upgrade disk sanity checks.
+    That is, upgrade disk items can not be picked up until they are unlocked.
+    """
+
+    display_name = "Upgrade Disk Sanity"
+
+    default = False
+
+    visibility = Visibility.all
+
+class KeySanity(Toggle):
+    """
+    This option enables key sanity checks.
+    That is, special keys can not be picked up until they are unlocked.
+    """
+
+    display_name = "Key Sanity"
+
+    default = True
+
+    visibility = Visibility.all
+
+class SpecialShopSanity(Toggle):
+    """
+    This option enables sanity checks for The Armory and Showroom.
+    That is, special shop items can not be purchased until they are unlocked.
+    """
+
+    display_name = "Special Shop Sanity"
+
+    default = False
+
+    visibility = Visibility.none
+
+class TrophySanity(Toggle):
+    """
+    This option enables checks for trophies.
+    Trophy sanity requires at least complex item logic.
+    """
+
+    display_name = "Trophy Sanity"
+
+    default = False
+
+    visibility = Visibility.none
+
+# TODO-2 Crate Sanity?
+# TODO-2 Document full list of potential checks/locations posted in blue prince thread.
+
+class LockedTrunkCommonCount(Range):
+    """
+    This is the number of common locked trunks per room that need to be opened for archipelago items. Example: Bedroom and Den trunks.
+    """
+
+    display_name = "Common Locked Trunks"
+
+    range_start = 0
+    range_end = 100
+
+    default = 0
+
+class LockedTrunkRareCount(Range):
+    """
+    This is the number of rare locked trunks per room that need to be opened for archipelago items. Example: Drawing Room trunk.
+    """
+
+    display_name = "Rare Locked Trunks"
+
+    range_start = 0
+    range_end = 100
+
+    default = 0
+
+class LockedTrunkComplexCount(Range):
+    """
+    This is the number of complex locked trunks per room that need to be opened for archipelago items. Example: Entrance Hall trunks from The Twins constellation or Laboratory experiments.
+    """
+
+    display_name = "Complex Locked Trunks"
+
+    range_start = 0
+    range_end = 100
+
+    default = 0
+
+class TrunkCounts(OptionCounter):
+    """
+    This allows the user to set the number of trunk locations per-room.
+
+    If not specified, will use the values from the previous three options for the corresponding trunk type.
+    """
+
+    display_name = "Trunk Counts"
+
+    rich_text_doc = True
+
+    min = 0
+    max = 100
+
+    default = {
+        "Bedroom": 1,
+        "Den": 3,
+        "Attic": 2,
+        "Conservatory": 2,
+        "Courtyard": 2,
+        "Her Ladyship's Chamber": 1,
+        "Hovel": 1,
+        "Laboratory": 1,
+        "Library": 1,
+        "Mail Room": 1,
+        "Nook": 1,
+        "Pump Room": 1,
+        "Root Cellar": 1,
+        "Storeroom": 2,
+        "Tunnel": 1,
+        "Veranda": 2
+    }
+
+    valid_keys = [room for room in rooms if ROOM_CHEST_SPOT_COUNT_KEY in rooms[room] and rooms[room][ROOM_CHEST_SPOT_COUNT_KEY] > 0]
+
+class ItemLogicMode(Choice):
+    """
+    This option controls which possible item spawns are considered for an item being obtainable.
+    Room upgrades are currently not considered at all.
+
+    - **default:** Only common, simple spawn locations are considered.
+    - **rare:** All simple spawn locations are considered, including ones that require high luck.
+    - **complex:** All common spawn locations are considered, including ones that require multiple rooms/items. Also includes trunk contents.
+    - **rare_complex:** Everything is considered except for ||Spiral of Stars||, ||Advanced Experiments||, ||Trading Post||, ||Freight Mail||, and extra complex ||Trunk locations||.
+    - **extreme:** Everything is considered.
+
+    """
+
+    display_name = "Item Logic Mode"
+
+    rich_text_doc = True
+    option_default = 0
+    option_rare = 1
+    option_complex = 2
+    option_rare_complex = 3
+    option_extreme = 4
+
+    default = 0
+
+class EnableObscureLocations(Choice):
+    """
+    This option controls whether the extremely obscure locations will be created, and if they will be excluded (forced to only contain filler).
+    ||Does it never end?||
+    Currently affects: Allowance Token - Outer Entrance Hall Vase
+
+    - **disable**: Disables them entirely
+    - **exclude**: Creates the locations, then sets them to excluded
+    - **enable**: Creates the locations
+
+    """
+
+    display_name = "Enable Obscure Locations"
+
+    rich_text_doc = True
+    option_disable = 0
+    option_exclude = 1
+    option_enable = 2
+
+    default = 0
+
+# TODO: Aries Court and Atelier Mora Jai boxes toggles?
+
+# Filler Options.
+class FillerItemDistribution(OptionCounter):
+    """
+    This option allows the user to set the weight chance of any particular item to show up as a filler item.
+    """
+
+    rich_text_doc = True
+
+    min = 0
+    max = 100
+
+    default = {
+        "allowance": 50,
+        "1_allowance": 0,
+        "2_allowance": 0,
+        "gold": 50,
+        "1_gold": 0,
+        "2_gold": 0,
+        "5_gold": 0,
+        "dice": 50,
+        "1_dice": 0,
+        "2_dice": 0,
+        "4_dice": 0,
+        "gems": 50,
+        "1_gems": 0,
+        "2_gems": 0,
+        "keys": 50,
+        "1_keys": 0,
+        "2_keys": 0,
+        "3_keys": 0,
+        "stars": 50,
+        "1_stars": 0,
+        "2_stars": 0,
+        "5_stars": 0,
+        "permanent_dice": 0,
+        "1_permanent_dice": 0,
+        "2_permanent_dice": 0,
+        "permanent_gems": 0,
+        "1_permanent_gems": 0,
+        "2_permanent_gems": 0,
+        "permanent_keys": 0,
+        "1_permanent_keys": 0,
+        "2_permanent_keys": 0,
+        "permanent_luck": 50,
+        "1_permanent_luck": 0,
+        "2_permanent_luck": 0,
+        "permanent_steps": 0,
+        "5_permanent_steps": 0,
+        "10_permanent_steps": 0,
+        "steps": 50,
+        "1_steps": 0,
+        "2_steps": 0,
+        "5_steps": 0,
+        "nothing": 50,
+    }
+
+    valid_keys = default.keys()
+
+
+class TrapTypeDistribution(OptionCounter):
+    """
+    This allows the user to set the weight chance of any particular trap to show up.
+
+    Possible traps are
+
+    - **Freeze Trap**: Freeze items as if the player entered a freezer.
+    - **Lose Steps Trap**: Lose between one and five steps.
+    - **Lose Item Trap**: Loose an item as if the player entered the lost and found.
+    - **Lose Stars Trap**: Lose one or more stars
+    - **End Day Trap**: End the day immediately.
+
+    Setting the trap with a number will remove that many specifically.
+    Setting the option without a number following will pick the count based on default weights.
+    """
+
+    rich_text_doc = True
+
+    min = 0
+    max = 100
+
+    # TODO-1 traps for consideration
+    # Tax trap: Loose 10% of your gold.
+    # Pickpocket trap: Loose some number of resources
+    # Toll trap: Loose 1 gold per room you walk through (everywhere is chapel)
+
+    default = {
+        "freeze_traps": 50,
+        "step_traps": 50,
+        "step_traps_1": 0,
+        "step_traps_2": 0,
+        "step_traps_5": 0,
+        "step_traps_set_to_1": 50,
+        "step_traps_set_to_10": 50,
+        "item_traps": 50,
+        "star_traps": 0,
+        "star_traps_1": 0,
+        "star_traps_2": 0,
+        "star_traps_5": 0,
+        "eod_traps": 50,
+    }
+
+    valid_keys = default.keys()
+
+
+class TrapPercentage(Range):
+    """
+    This is the percentage that a given fill item will be a trap instead of an item.
+    """
+
+    display_name = "Trap Percentage"
+
+    range_start = 0
+    range_end = 100
+    default = 0
+
+
+# Death Link Options
+class DeathLinkType(Choice):
+    """
+
+    Sets the circumstances under which a death-link is sent out.
+
+    - **none:** Death Link is disabled.
+    - **eod:** A Death Link is sent whenever the day ends.
+    - **bedroom:** A Death Link is sent whenever the player ends outside a bedroom or break room.
+    - **steps:** A Death Link is sent whenever the player runs out of steps.
+
+    """
+
+    display_name = "Death Link Type"
+    rich_text_doc = True
+    option_none = 0
+    option_eod = 1
+    option_bedroom = 2
+    option_steps = 3
+
+    default = 0
+
+
+class DeathLinkGrace(Range):
+    """
+    Death Link Grace is the number of times that the player may trigger the death link circumstance
+    before the death link will actually be sent.
+
+    - When 0, a death link will be triggered upon every matching circumstance.
+
+    - When 1, the death link will be deferred once before being triggered.
+    AKA death link will trigger every other time.
+    """
+
+    display_name = "Death Link grace"
+    rich_text_doc = True
+
+    range_start = 0
+    range_end = 100
+    default = 0
+
+class DeathLinkProtection(Range):
+    """
+    Death Link Protection is the number of times a death link will be blocked before the player will actually die from a death link.
+    """
+
+    display_name = "Death Link Protection"
+    rich_text_doc = True
+
+    range_start = 0
+    range_end = 100
+    default = 0
+
+
+class DeathLinkMonkException(Toggle):
+    """
+    Death Link will be ignored if the "Blessing Of The Monk" is currently active.
+    """
+
+    display_name = "Death Link Monk Exception"
+    rich_text_doc = True
+
+    default = True
+
+class MaxQueuedDeathLinks(Range):
+    """
+    The maximum number of queued death links that can be pending at any given time. 0 disables the max limit.
+    """
+
+    display_name = "Max Queued Death Links"
+    rich_text_doc = True
+
+    range_start = 0
+    range_end = 100
+    default = 0
+
+# Goal Options
+class GoalType(Choice):
+    """
+
+    This selection determines what goal the player needs to aim for.
+
+    - **antechamber:** Reach the antechamber once
+    - **room46:** Reach room 46 once
+    - **sanctum:** Open a select number of sanctum keys - PARTIALLY IMPLEMENTED.
+    - **ascend:** Ascend the throne - NOT IMPLEMENTED.
+    - **tunnel:** Open one of the boxes at the end of the Tunnel - NOT IMPLEMENTED.
+    - **blueprints:** Find the Blue Prints - NOT IMPLEMENTED.
+
+    """
+
+    display_name = "Goal"
+
+    rich_text_doc = True
+    option_antechamber = 0
+    option_room46 = 1
+    option_sanctum = 2
+    option_ascend = 3
+    option_tunnel = 4
+    option_blueprints = 5
+
+    default = 0
+
+
+class GoalSanctumSolves(Range):
+    """
+    The number of sanctum keys to find, and sanctum doors to open for the goal to be achieved.
+    """
+
+    display_name = "Goal: Sanctums Solved"
+
+    range_start = 1
+    range_end = 8
+    default = 8
+
+class StartingRoomAmount(Range):
+    """
+    This is the number of starting rooms the player begins with in their inventory, randomly pulled from those that can be drafted from the Entrance Hall. This only applies when room draft sanity is on. Will not choose any that are already in the starting inventory. Closet is always added in addition due to technical limitations.
+    """
+
+    display_name = "Number of Starting Rooms"
+
+    range_start = 2
+    range_end = 10
+    default = 3
+
+class ExtraTrunkChance(Range):
+    """
+    This increases the chance of spawning a trunk in the rooms that can contain trunks.
+    """
+
+    display_name = "Extra Trunk Chance"
+
+    range_start = 0
+    range_end = 100
+    default = 0
+
+class DevTesting(Toggle):
+    """
+    Dev: Toggle to turn on locations and items that are not implemented yet
+    """
+
+    display_name = "Dev: Development Testing"
+
+    default = False
+
+    visibility = Visibility.none
+
+# We must now define a dataclass inheriting from PerGameCommonOptions that we put all our options in.
+# This is in the format "option_name_in_snake_case: OptionClassName".
+@dataclass
+class BluePrinceOptions(PerGameCommonOptions):
+
+    room_draft_sanity: RoomDraftSanity
+    starting_room_amount: StartingRoomAmount
+    locked_trunks_common: LockedTrunkCommonCount
+    locked_trunks_rare: LockedTrunkRareCount
+    locked_trunks_complex: LockedTrunkComplexCount
+    trunks: TrunkCounts
+    extra_trunk_chance: ExtraTrunkChance
+    item_logic_mode: ItemLogicMode
+    enable_obscure_locations: EnableObscureLocations
+
+    standard_item_sanity: StandardItemSanity
+    workshop_sanity: WorkshopSanity
+    upgrade_disk_sanity: UpgradeDiskSanity
+    key_sanity: KeySanity
+    special_shop_sanity: SpecialShopSanity
+    trophy_sanity: TrophySanity
+
+    # Extra item options.
+    filler_item_distribution: FillerItemDistribution
+    trap_type_distribution: TrapTypeDistribution
+    trap_percentage: TrapPercentage
+
+    # DeathLink Options
+    death_link_type: DeathLinkType
+    death_link_grace: DeathLinkGrace
+    death_link_protection: DeathLinkProtection
+    death_link_monk_exception: DeathLinkMonkException
+    max_queued_deathlinks: MaxQueuedDeathLinks
+
+    # Goal Options
+    goal_type: GoalType
+    goal_sanctum_solves: GoalSanctumSolves
+
+    dev_testing: DevTesting
+
+
+# If we want to group our options by similar type, we can do so as well. This looks nice on the website.
+option_groups = [
+    OptionGroup(
+        "Sanity Options",
+        [
+            RoomDraftSanity,
+            StartingRoomAmount,
+            LockedTrunkCommonCount,
+            LockedTrunkRareCount,
+            LockedTrunkComplexCount,
+            TrunkCounts,
+            ExtraTrunkChance,
+            ItemLogicMode,
+            StandardItemSanity,
+            WorkshopSanity,
+            UpgradeDiskSanity,
+            KeySanity,
+            SpecialShopSanity,
+            TrophySanity,
+            EnableObscureLocations
+        ],
+    ),
+    OptionGroup(
+        "Filler Options",
+        [FillerItemDistribution, TrapTypeDistribution, TrapPercentage],
+    ),
+    OptionGroup(
+        "Death Link Options",
+        [DeathLinkType, DeathLinkGrace, DeathLinkProtection, DeathLinkMonkException, MaxQueuedDeathLinks],
+    ),
+    OptionGroup(
+        "Goal Options",
+        [GoalType, GoalSanctumSolves],
+    ),
+]
+
+
+option_presets = {
+    "Antechamber Basic": {
+        "room_draft_sanity": True,
+        "starting_room_amount": StartingRoomAmount.range_start,
+        "locked_trunks_common": 0,
+        "locked_trunks_rare": 0,
+        "locked_trunks_complex": 0,
+        "extra_trunk_chance": ExtraTrunkChance.default,
+        "trunks": {
+            "Bedroom": 1,
+            "Courtyard": 1,
+        },
+        "standard_item_sanity": True,
+        "workshop_sanity": False,
+        "upgrade_disk_sanity": False,
+        "key_sanity": False,
+        "special_shop_sanity": False,
+        "trophy_sanity": False,
+        "item_logic_mode": ItemLogicMode.default,
+        "enable_obscure_locations": EnableObscureLocations.default,
+        "filler_item_distribution": {
+            "allowance": 50,
+            "dice": 50,
+            "gems": 50,
+            "gold": 50,
+            "keys": 50,
+            "stars": 50,
+            "permanent_luck": 50,
+            "steps": 50,
+            "nothing": 50
+        },
+        "trap_type_distribution": {
+            "eod_traps": 50,
+            "freeze_traps": 50,
+            "item_traps": 50,
+            "step_traps": 50,
+            "step_traps_set_to_1": 50,
+            "step_traps_set_to_10": 50
+        },
+        "trap_percentage": TrapPercentage.range_start,
+        "death_link_type": DeathLinkType.option_none,
+        "death_link_grace": DeathLinkGrace.range_start,
+        "death_link_protection": 0,
+        "death_link_monk_exception": True,
+        "max_queued_deathlinks": MaxQueuedDeathLinks.default,
+        "goal_type": GoalType.option_antechamber,
+        "goal_sanctum_solves": GoalSanctumSolves.range_end,
+        "start_inventory": {},
+    },
+    "Room 46 Basic": {
+        "room_draft_sanity": True,
+        "starting_room_amount": StartingRoomAmount.range_start,
+        "locked_trunks_common": 0,
+        "locked_trunks_rare": 0,
+        "locked_trunks_complex": 0,
+        "trunks": {
+            "Bedroom": 2,
+            "Courtyard": 2,
+        },
+        "extra_trunk_chance": ExtraTrunkChance.default,
+        "standard_item_sanity": True,
+        "workshop_sanity": False,
+        "upgrade_disk_sanity": False,
+        "key_sanity": False,
+        "special_shop_sanity": False,
+        "trophy_sanity": False,
+        "item_logic_mode": ItemLogicMode.default,
+        "enable_obscure_locations": EnableObscureLocations.default,
+        "filler_item_distribution": {
+            "allowance": 50,
+            "dice": 50,
+            "gems": 50,
+            "gold": 50,
+            "keys": 50,
+            "stars": 50,
+            "permanent_luck": 50,
+            "steps": 50,
+            "nothing": 50
+        },
+        "trap_type_distribution": {
+            "eod_traps": 50,
+            "freeze_traps": 50,
+            "item_traps": 50,
+            "step_traps": 50,
+            "step_traps_set_to_1": 50,
+            "step_traps_set_to_10": 50
+        },
+        "trap_percentage": TrapPercentage.range_start,
+        "death_link_type": DeathLinkType.option_none,
+        "death_link_grace": DeathLinkGrace.range_start,
+        "death_link_protection": 0,
+        "death_link_monk_exception": True,
+        "max_queued_deathlinks": MaxQueuedDeathLinks.default,
+        "goal_type": GoalType.option_room46,
+        "goal_sanctum_solves": GoalSanctumSolves.range_end,
+        "start_inventory": {},
+    },
+}

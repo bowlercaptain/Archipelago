@@ -1,0 +1,1063 @@
+from __future__ import annotations
+
+from collections import defaultdict
+import dataclasses
+from typing import TYPE_CHECKING
+from rule_builder.rules import *
+
+if TYPE_CHECKING:
+    from .world import BluePrinceWorld
+
+from .data_rooms import rooms, core_rooms, room_layout_lists
+from .constants import *
+from .room_min_pieces import POSITION_MINIMUM_PIECES, POSITION_MINIMUM_TOTAL_PIECES
+from .options import ItemLogicMode, SpecialShopSanity, TrophySanity, UpgradeDiskSanity
+from .data_items import *
+
+default_logic_filter = [OptionFilter(ItemLogicMode, ItemLogicMode.option_default)]
+rare_logic_filter = [OptionFilter(ItemLogicMode, [ItemLogicMode.option_rare, ItemLogicMode.option_rare_complex, ItemLogicMode.option_extreme], operator="in")]
+complex_logic_filter = [OptionFilter(ItemLogicMode, [ItemLogicMode.option_complex, ItemLogicMode.option_rare_complex, ItemLogicMode.option_extreme], operator="in")]
+extreme_logic_filter = [OptionFilter(ItemLogicMode, ItemLogicMode.option_extreme)]
+
+def set_all_rules(world: BluePrinceWorld) -> None:
+
+    set_completion_condition(world)
+
+def set_completion_condition(world: BluePrinceWorld) -> None:
+
+    world.set_completion_rule(Has("Victory"))
+
+
+@dataclasses.dataclass()
+class CanReachPickPosition(Rule["BluePrinceWorld"], game="Blue Prince"):
+    """
+    Use pre-calculated tables to determine if a the pick position is reachable with the current inventory.
+    """
+    room : str
+    always_have: bool = False
+    @override
+    def _instantiate(self, world: "BluePrinceWorld") -> Rule.Resolved:
+        return self._build_rule().resolve(world)
+
+        # return self.Resolved(self.room, self.always_have, player=world.player)
+    
+    def _build_rule(self) -> Rule:
+        rule_has : Rule
+        if not self.always_have and self.room not in core_rooms:
+            rule_has = Has(self.room)
+        else:
+            rule_has = True_()
+        
+        room_data = rooms[self.room]
+            
+        positions_types = room_data[ROOM_PICK_POSITIONS_KEY]
+
+        pos_types_rule : Rule = False_()
+        for pt in positions_types:
+            if pt not in POSITION_MINIMUM_PIECES:
+                continue
+
+            min_total = POSITION_MINIMUM_TOTAL_PIECES[pt]
+            if room_data[ROOM_LAYOUT_TYPE_KEY] != ROOM_LAYOUT_TYPE_D:
+                min_total += 1
+            
+            pt_rule = False_()
+
+            min_rule = HasGroup("Rooms", count=min_total)
+
+            min_layouts = POSITION_MINIMUM_PIECES[pt]
+            
+            if room_data[ROOM_LAYOUT_TYPE_KEY] == ROOM_LAYOUT_TYPE_X:
+                for layout in min_layouts:
+                    pt_rule |= And(HasGroup("4-Way Rooms", count=layout[0]+1),
+                            HasGroup("T-Shaped Rooms", count=layout[1]),
+                            HasGroup("Straight Rooms", count=layout[2]),
+                            HasGroup("Corner Rooms", count=layout[3]))
+                    # TODO: remove this if we ever are able to add Bookshop as an item
+                    pt_rule |= And(Has("Library"),
+                            HasGroup("4-Way Rooms", count=layout[0]+1),
+                            HasGroup("T-Shaped Rooms", count=layout[1]),
+                            HasGroup("Straight Rooms", count=layout[2]),
+                            HasGroup("Corner Rooms", count=max(layout[3]-1, 0)))
+            elif room_data[ROOM_LAYOUT_TYPE_KEY] == ROOM_LAYOUT_TYPE_T:
+                for layout in min_layouts:
+                    pt_rule |= And(HasGroup("4-Way Rooms", count=layout[0]),
+                            HasGroup("T-Shaped Rooms", count=layout[1]+1),
+                            HasGroup("Straight Rooms", count=layout[2]),
+                            HasGroup("Corner Rooms", count=layout[3]))
+                    # TODO: remove this if we ever are able to add Bookshop as an item
+                    pt_rule |= And(Has("Library"),
+                            HasGroup("4-Way Rooms", count=layout[0]),
+                            HasGroup("T-Shaped Rooms", count=layout[1]+1),
+                            HasGroup("Straight Rooms", count=layout[2]),
+                            HasGroup("Corner Rooms", count=max(layout[3]-1, 0)))
+            elif room_data[ROOM_LAYOUT_TYPE_KEY] == ROOM_LAYOUT_TYPE_I:
+                for layout in min_layouts:
+                    pt_rule |= And(HasGroup("4-Way Rooms", count=layout[0]),
+                            HasGroup("T-Shaped Rooms", count=layout[1]),
+                            HasGroup("Straight Rooms", count=layout[2]+1),
+                            HasGroup("Corner Rooms", count=layout[3]))
+                    # TODO: remove this if we ever are able to add Bookshop as an item
+                    pt_rule |= And(Has("Library"),
+                            HasGroup("4-Way Rooms", count=layout[0]),
+                            HasGroup("T-Shaped Rooms", count=layout[1]),
+                            HasGroup("Straight Rooms", count=layout[2]+1),
+                            HasGroup("Corner Rooms", count=max(layout[3]-1, 0)))
+            elif room_data[ROOM_LAYOUT_TYPE_KEY] == ROOM_LAYOUT_TYPE_J:
+                for layout in min_layouts:
+                    pt_rule |= And(HasGroup("4-Way Rooms", count=layout[0]),
+                            HasGroup("T-Shaped Rooms", count=layout[1]),
+                            HasGroup("Straight Rooms", count=layout[2]),
+                            HasGroup("Corner Rooms", count=layout[3]+1))
+                    # TODO: remove this if we ever are able to add Bookshop as an item
+                    pt_rule |= And(Has("Library"),
+                            HasGroup("4-Way Rooms", count=layout[0]),
+                            HasGroup("T-Shaped Rooms", count=layout[1]),
+                            HasGroup("Straight Rooms", count=layout[2]),
+                            HasGroup("Corner Rooms", count=layout[3]))
+            else:
+                for layout in min_layouts:
+                    pt_rule |= And(HasGroup("4-Way Rooms", count=layout[0]),
+                            HasGroup("T-Shaped Rooms", count=layout[1]),
+                            HasGroup("Straight Rooms", count=layout[2]),
+                            HasGroup("Corner Rooms", count=layout[3]))
+                    # TODO: remove this if we ever are able to add Bookshop as an item
+                    pt_rule |= And(Has("Library"),
+                            HasGroup("4-Way Rooms", count=layout[0]),
+                            HasGroup("T-Shaped Rooms", count=layout[1]),
+                            HasGroup("Straight Rooms", count=layout[2]),
+                            HasGroup("Corner Rooms", count=max(layout[3]-1, 0)))
+
+            pos_types_rule |= min_rule & pt_rule
+        
+        return rule_has & pos_types_rule
+        
+    # class Resolved(Rule.Resolved):
+    #     room : str
+    #     always_have: bool = False
+    #     @override
+    #     def _evaluate(self, state: CollectionState) -> bool:
+    #         if not self.always_have and self.room not in core_rooms and not state.has(self.room, self.player):
+    #             return False
+            
+    #         room_data = rooms[self.room]
+            
+    #         positions_types = room_data[ROOM_PICK_POSITIONS_KEY]
+
+    #         inventory = {
+    #             ROOM_LAYOUT_TYPE_X: state.count_from_list(room_layout_lists[ROOM_LAYOUT_TYPE_X], self.player),
+    #             ROOM_LAYOUT_TYPE_T: state.count_from_list(room_layout_lists[ROOM_LAYOUT_TYPE_T], self.player),
+    #             ROOM_LAYOUT_TYPE_I: state.count_from_list(room_layout_lists[ROOM_LAYOUT_TYPE_I], self.player),
+    #             ROOM_LAYOUT_TYPE_J: state.count_from_list(room_layout_lists[ROOM_LAYOUT_TYPE_J], self.player),
+    #         }
+
+    #         total_inventory = sum(inventory.values())
+
+    #         if (room_data[ROOM_LAYOUT_TYPE_KEY] in inventory and inventory[room_data[ROOM_LAYOUT_TYPE_KEY]] > 0):
+    #             inventory[room_data[ROOM_LAYOUT_TYPE_KEY]] -= 1
+
+    #         for pt in positions_types:
+    #             if pt not in POSITION_MINIMUM_PIECES or total_inventory < POSITION_MINIMUM_TOTAL_PIECES[pt]:
+    #                 continue
+    #             if self.matches_minimum_inventory(POSITION_MINIMUM_PIECES[pt], inventory):
+    #                 return True
+                
+    #         return False
+        
+    #     def matches_minimum_inventory(self, required: list[tuple[int, int, int, int]], inventory: dict[str, int]) -> bool:
+    #         inv = tuple(inventory[k] for k in inventory)
+    #         for req in required:
+    #             if all(inv[i] >= req[i] for i in range(4)):
+    #                 return True
+                
+    #         return False
+
+    #     @override
+    #     def explain_json(self, state: CollectionState | None = None) -> list[JSONMessagePart]:
+    #         return [
+    #             {"type": "text", "text": "Use pre-calculated tables to determine if a the pick position for  "},
+    #             {"type": "color", "color": "green" if state and self(state) else "salmon", "text": self.room},
+    #             {"type": "text", "text": "is reachable with the current inventory."},
+    #         ]
+
+@dataclasses.dataclass()
+class CanReachItemLocation(Rule["BluePrinceWorld"], game="Blue Prince"):
+    """
+    Get the item rules for if the location is reachable with the current inventory.
+    """
+    location: str
+    parent_region_name: str = ""
+    @override
+    def _instantiate(self, world: "BluePrinceWorld") -> Rule.Resolved:
+        from .data_other_locations import locations, armory_items
+        loc_name = "First Pickup - " + self.location
+
+        if loc_name in locations:
+            if IMPLEMENTATION_STATUS in locations[loc_name] and locations[loc_name][IMPLEMENTATION_STATUS] == NOT_IMPLEMENTED:
+                if LOCATION_RULE_SIMPLE_COMMON in locations[loc_name]:
+                    return (CanReachRegion(locations[loc_name][LOCATION_ROOM_KEY]) & locations[loc_name][LOCATION_RULE_SIMPLE_COMMON]).resolve(world)
+                else:
+                    return True_().resolve(world)
+            else:
+                return (Has(self.location) & CanReachLocation(loc_name, parent_region_name=self.parent_region_name)).resolve(world)
+        
+        if self.location in workshop_items:
+            if f"First Pickup - {self.location}" in locations and IMPLEMENTATION_STATUS in locations[f"First Pickup - {self.location}"] and locations[f"First Pickup - {self.location}"][IMPLEMENTATION_STATUS] == NOT_IMPLEMENTED:
+                return locations[f"First Pickup - {self.location}"][LOCATION_RULE_SIMPLE_COMMON].resolve(world)
+            else:
+                return (Has(self.location) & CanReachLocation(f"First Pickup - {self.location}", parent_region_name="Workshop")).resolve(world)
+
+        if self.location in armory_items:
+            return (Has(self.location, options=[OptionFilter(SpecialShopSanity, True)], filtered_resolution=True) & CanReachRegion("The Armory")).resolve(world)
+        
+        for location, data in locations.items():
+            if LOCATION_ITEM_KEY in data and data[LOCATION_ITEM_KEY] == self.location:
+                if IMPLEMENTATION_STATUS in data and data[IMPLEMENTATION_STATUS] == NOT_IMPLEMENTED and LOCATION_RULE_SIMPLE_COMMON in data:
+                    return (CanReachRegion(data[LOCATION_ROOM_KEY]) & data[LOCATION_RULE_SIMPLE_COMMON]).resolve(world)
+                return (Has(self.location) & CanReachLocation(location, parent_region_name=self.parent_region_name)).resolve(world)
+
+        return False_().resolve(world)
+    
+@dataclasses.dataclass()
+class MechanariumDoorRule(Rule["BluePrinceWorld"], game="Blue Prince"):
+    """
+    Get the rules for if the mechanarium door can be opened with the current inventory.
+    """
+    door: int
+    @override
+    def _instantiate(self, world: "BluePrinceWorld") -> Rule.Resolved:
+        return (CanReachRegion("Mechanarium") & 
+            HasFromList("Utility Closet", "Boiler Room", "Pump Room", "Security", "Workshop", "Laboratory", "Mechanarium", # Might add electric eel aquarium when we add upgraded rooms
+                        count=self.door + 1) # might make it require more, since its pretty hard to get a door with the minimum count
+        ).resolve(world)
+    
+@dataclasses.dataclass()
+class CanReachAllLocations(Rule["BluePrinceWorld"], game="Blue Prince"):
+    """
+    Check if the player can reach all locations in the list.
+    """
+    locations: tuple[str, ...]
+
+    def __init__(self, *locations: str):
+        self.locations = locations
+
+    @override
+    def _instantiate(self, world: "BluePrinceWorld") -> Rule.Resolved:
+        return And(*[CanReachLocation(location) for location in self.locations]).resolve(world)
+
+@dataclasses.dataclass()
+class TrunkRule(Rule["BluePrinceWorld"], game="Blue Prince"):
+    """
+    Check if the player can open a trunk with the current inventory.
+    """
+    @override
+    def _instantiate(self, world: "BluePrinceWorld") -> Rule.Resolved:
+        return (
+            Or(*[CanReachRegion(room) for room in [
+                "Attic",
+                "Bedroom",
+                "Courtyard",
+                "Den",
+                "Laboratory",
+                "Library",
+                "Mail Room",
+                "Observatory",
+                "Office",
+                "Storeroom",
+                "Study",
+                "Terrace",
+                "Vault",
+                "Veranda",
+                "Wine Cellar",
+                "Morning Room",
+                "Dormitory",
+                "Tunnel",
+                "Conservatory",
+            ]], options=complex_logic_filter) |
+            Or(
+                *[CanReachRegion(room) for room in [
+                    "Spare Room",
+                    "Music Room",
+                    "Drawing Room",
+                    "Gallery",
+                    "Great Hall",
+                ]], 
+                CanReachRegion("Trophy Room", options=[OptionFilter(TrophySanity, True)]),
+                CanReachRegion("The Pool") & Has("Gift Shop - Swim Trunks"),
+                PlanetariumRule(),
+                options=extreme_logic_filter
+            )
+        ).resolve(world)
+    
+@dataclasses.dataclass()
+class DarkRoomRule(Rule["BluePrinceWorld"], game="Blue Prince"):
+    """
+    Check if the player can turn on dark room lights (and get the items within) with the current inventory.
+    """
+
+    @override
+    def _instantiate(self, world: "BluePrinceWorld") -> Rule.Resolved:
+        return And(CanReachRegion("Darkroom"), (
+            CanReachRegion("Utility Closet") |
+            CanReachRegion("Shelter") |
+            CanReachItemLocation("KNIGHTS SHIELD")
+        ), options=complex_logic_filter).resolve(world)
+    
+@dataclasses.dataclass()
+class LavatoryRule(Rule["BluePrinceWorld"], game="Blue Prince"):
+    """
+    Check if the player can spawn items in the lavatory with the current inventory.
+    """
+
+    @override
+    def _instantiate(self, world: "BluePrinceWorld") -> Rule.Resolved:
+        return And(CanReachRegion("Lavatory"), (
+            CanReachRegion("Shelter") |
+            CanReachItemLocation("KNIGHTS SHIELD") |
+            CanReachItemLocation("Dowsing Rod")
+        ), options=complex_logic_filter).resolve(world)
+
+@dataclasses.dataclass()
+class ShelteredRule(Rule["BluePrinceWorld"], game="Blue Prince"):
+    """
+    Check if the player can shelter a red room effect
+    """
+
+    @override
+    def _instantiate(self, world: "BluePrinceWorld") -> Rule.Resolved:
+        return Or(
+            CanReachRegion("Shelter"),
+            CanReachItemLocation("KNIGHTS SHIELD"),
+            options=complex_logic_filter).resolve(world)
+
+@dataclasses.dataclass()
+class PlanetariumRule(Rule["BluePrinceWorld"], game="Blue Prince"):
+    """
+    Check if the player can use the planetarium with the current inventory.
+    """
+
+    @override
+    def _instantiate(self, world: "BluePrinceWorld") -> Rule.Resolved:
+        return And(CanReachRegion("Planetarium"), CanReachItemLocation("TELESCOPE", parent_region_name="Campsite"), options=complex_logic_filter).resolve(world)
+    
+@dataclasses.dataclass()
+class AdvancedExperimentRule(Rule["BluePrinceWorld"], game="Blue Prince"):
+    """
+    Check if the player can do the advanced experiment with the current inventory.
+    """
+    force: bool = False
+
+    @override
+    def _instantiate(self, world: "BluePrinceWorld") -> Rule.Resolved:
+        return And(
+            Or(
+                CanReachRegion("Laboratory"), 
+                And(
+                    CanReachRegion("Blackbridge Grotto"),
+                    Or(
+                        CanReachRegion("Security"),
+                        CanReachRegion("Office"),
+                        CanReachRegion("Shelter"),
+                    ),
+                ),
+            ), 
+            Has("Satellite Dish"),
+            Has("Raised Satellite Dish"),
+            options=([] if self.force else extreme_logic_filter)
+        ).resolve(world)
+
+prev_trading_post_offers : set[str] = set()
+@dataclasses.dataclass()
+class TradingPostRule(Rule["BluePrinceWorld"], game="Blue Prince"):
+    """
+    Check if the player can get an item from the trading post with the current inventory.
+    """
+    item_name: str
+
+    @override
+    def _instantiate(self, world: "BluePrinceWorld") -> Rule.Resolved:
+        if self.item_name in prev_trading_post_offers:
+            return False_().resolve(world)
+        
+        prev_trading_post_offers.add(self.item_name)
+        rule = And(CanReachRegion("Trading Post"), 
+                Or(
+                    *[CanReachItemLocation(item) for item in self.get_trading_post_offers(self.item_name) if self.item_name not in prev_trading_post_offers],
+                ),
+                options=complex_logic_filter).resolve(world)
+        prev_trading_post_offers.remove(self.item_name)
+        return rule
+    
+    # Trading can get any item of the same tier or lower
+    def get_trading_post_offers(self, give: str) -> list[str]:
+        if give in TRADING_POST_TIER1[TRADING_POST_GIVE]:
+            return [x for x in TRADING_POST_TIER1[TRADING_POST_RECEIVE] if x != give]
+        if give in TRADING_POST_TIER2[TRADING_POST_GIVE]:
+            return [x for x in TRADING_POST_TIER2[TRADING_POST_RECEIVE] + TRADING_POST_TIER1[TRADING_POST_RECEIVE] if x != give]
+        if give in TRADING_POST_TIER3[TRADING_POST_GIVE]:
+            return [x for x in TRADING_POST_TIER3[TRADING_POST_RECEIVE] + TRADING_POST_TIER2[TRADING_POST_RECEIVE] + TRADING_POST_TIER1[TRADING_POST_RECEIVE] if x != give]
+        if give in TRADING_POST_TIER4[TRADING_POST_GIVE]:
+            return [x for x in TRADING_POST_TIER4[TRADING_POST_RECEIVE] + TRADING_POST_TIER3[TRADING_POST_RECEIVE] + TRADING_POST_TIER2[TRADING_POST_RECEIVE] + TRADING_POST_TIER1[TRADING_POST_RECEIVE] if x != give]
+        return []
+    
+@dataclasses.dataclass()
+class DigSpotRule(Rule["BluePrinceWorld"], game="Blue Prince"):
+    """
+    Check if the player can find a dig spot with the current inventory.
+    """
+
+    @override
+    def _instantiate(self, world: "BluePrinceWorld") -> Rule.Resolved:
+        return (CanReachItemLocation("SHOVEL") &
+            Or(
+            *[CanReachRegion(room) for room in [
+                "The Foundation",
+                "Wine Cellar",
+                "Aquarium",
+                "Courtyard",
+                "Greenhouse",
+                "Morning Room",
+                "Veranda",
+                "Terrace",
+                "Cloister",
+                "Patio",
+                "Storeroom",
+                "Garage",
+                "Pump Room",
+                "Workshop",
+                "Secret Garden",
+                "Root Cellar",
+                "Hovel",
+                "The Kennel",
+                "Dovecote",
+                "Solarium",
+                "Tunnel",
+                "Conservatory",
+                "Boiler Room",
+            ]], 
+            PlanetariumRule(), options=extreme_logic_filter)).resolve(world)
+
+# TODO:
+@dataclasses.dataclass()
+class CloisterRule(Rule["BluePrinceWorld"], game="Blue Prince"):
+    """
+    Check if the player can reach a certain room with a certain Cloister upgrade
+    """
+    room: str
+    cloister_upgrade: str
+
+    @override
+    def _instantiate(self, world: "BluePrinceWorld") -> Rule.Resolved:
+        return And(CanReachRegion(self.room), UpgradedRoomRule("Cloister", self.cloister_upgrade)).resolve(world)
+
+# TODO:
+@dataclasses.dataclass()
+class UpgradedRoomRule(Rule["BluePrinceWorld"], game="Blue Prince"):
+    """
+    Check if the player can reach a certain upgraded room
+    """
+    room: str
+    upgrade: str
+
+    @override
+    def _instantiate(self, world: "BluePrinceWorld") -> Rule.Resolved:
+        return False_().resolve(world)
+
+@dataclasses.dataclass()
+class CarTrunkRule(Rule["BluePrinceWorld"], game="Blue Prince"):
+    """
+    Check if the player can open the car trunk with the current inventory.
+    """
+
+    @override
+    def _instantiate(self, world: "BluePrinceWorld") -> Rule.Resolved:
+        return And(
+            CanReachRegion("Garage"), 
+            CanReachItemLocation("CAR KEYS"),
+            Or(
+                CanReachRegion("Laboratory"),
+                CanReachRegion("Office"),
+                CanReachRegion("Shelter"),
+                CanReachRegion("Laboratory"),
+                CanReachRegion("Blackbridge Grotto"),
+                CanReachRegion("Coat Check"),
+                CanReachItemLocation("Moon Pendant"),
+                options=[OptionFilter(UpgradeDiskSanity, False)],
+                filtered_resolution=True
+            )
+        ).resolve(world)
+    
+@dataclasses.dataclass()
+class SpiralOfStarsRule(Rule["BluePrinceWorld"], game="Blue Prince"):
+    """
+    Check if the player can access the Spiral of Stars with the current inventory.
+    """
+
+    @override
+    def _instantiate(self, world: "BluePrinceWorld") -> Rule.Resolved:
+        return Filtered(CanReachRegion("Observatory"), options=extreme_logic_filter).resolve(world)
+
+ROOM_COINS: dict[str, int] = {
+            "Vault": 40,
+            "Casino": 15,
+            "Rumpus Room": 8,
+            "Tomb": 5, # basic logic only accounts for the first 5 coins in tomb
+            "Pantry": 4,
+            "Storeroom": 1,
+        }
+
+TREASURE_TROVE_COINS: int = 25 # basic logic only accounts for the first 25 coins in treasure trove
+
+STOREROOM_UPGRADE_COINS: int = 9
+AQUARIUM_UPGRADE_COINS: int = 10
+
+PAYROLL_COINS: int = 10
+TOMB_SPREAD_COINS: int = 5
+PIETY_OF_THE_BISHOP_COINS: int = 30
+
+COIN_PURSE_MULT : float = 3 / 2
+LUCKY_PURSE_MULT : int = 2
+FREEZER_MULT : int = 2
+
+coin_sources: dict[str, str] = {}
+
+has_coins_lock : bool = False
+
+@dataclasses.dataclass()
+class HasCoins(Rule["BluePrinceWorld"], game="Blue Prince"):
+    """
+    Check if the player has access to a certain amount of coins.
+    """
+    amount: int
+
+    @override
+    def _instantiate(self, world: "BluePrinceWorld") -> Rule.Resolved:
+        return self.Resolved(self.amount, lategame=world.options.goal_type.value > 1, complex=world.options.item_logic_mode.value >= 2, workshop=world.options.workshop_sanity.value, player=world.player)
+
+    class Resolved(Rule.Resolved):
+        amount: int
+        lategame: bool = False
+        complex: bool = False
+        workshop: bool = False
+
+        @override
+        def _evaluate(self, state: CollectionState) -> bool:
+            global has_coins_lock # prevent HasCoins from being called recursively
+            if has_coins_lock:
+                return False
+            
+            has_coins_lock = True
+            coins = self.calculate_reachable_coins(state)
+            has_coins_lock = False
+
+            return coins >= self.amount
+
+        @override
+        def explain_str(self, state: CollectionState | None = None) -> str:
+            coins = 0
+            if state is not None:
+                coins = self.calculate_reachable_coins(state, log_sources=True)
+
+            return f"Reachable coins: {coins} / {self.amount}. Sources: {coin_sources}"
+
+        @override
+        def explain_json(self, state: CollectionState | None = None) -> list[JSONMessagePart]:
+            coins = 0
+            if state is not None:
+                coins = self.calculate_reachable_coins(state, log_sources=True)
+
+            res : list[JSONMessagePart] = [{"type": "text", "text": f"Reachable coins: {coins} / {self.amount}. Sources: {coin_sources}"}]
+
+            return res
+            # return [
+            #     {"type": "text", "text": " "},
+            #     {"type": "color", "color": "green" if state and self(state) else "salmon", "text": str(self.amount)},
+            #     {"type": "text", "text": "is reachable with the current inventory."},
+            #     {"type": "text", "text": f" ({res})"},
+            # ]
+
+        def calculate_reachable_coins(self, state: CollectionState, log_sources: bool = False) -> int:
+            coins = 0
+            if log_sources:
+                coin_sources.clear()
+            for room, room_coins in ROOM_COINS.items():
+                if state.can_reach_region(room, self.player):
+                    coins += room_coins
+                    if log_sources:
+                        coin_sources[room] = f"{room_coins}"
+
+            if self.lategame and state.can_reach_region("Treasure Trove", self.player): # type: ignore
+                coins += TREASURE_TROVE_COINS
+                if log_sources:
+                    coin_sources["Treasure Trove"] = f"{TREASURE_TROVE_COINS}"
+
+            # TODO: other devs suggested using event items to handle room upgrades
+            # if UpgradedRoomRule("Storeroom", "Coins").resolve(state.multiworld.worlds[self.player])._evaluate(state): # type: ignore
+            #     coins += STOREROOM_UPGRADE_COINS
+            #     if log_sources:
+            #         coin_sources["Storeroom Upgrade"] = STOREROOM_UPGRADE_COINS
+
+            # if UpgradedRoomRule("Aquarium", "Goldfish").resolve(state.multiworld.worlds[self.player])._evaluate(state): # type: ignore
+            #     coins += AQUARIUM_UPGRADE_COINS
+            #     if log_sources:
+            #         coin_sources["Goldfish Aquarium"] = AQUARIUM_UPGRADE_COINS
+
+            # Coins From "Run Payroll"
+            if state.can_reach_region("Office", self.player):
+                office_payroll = 0
+                
+                if state.can_reach_region("Servant's Quarters", self.player):
+                    office_payroll += PAYROLL_COINS
+                    coins += PAYROLL_COINS
+                if state.can_reach_region("Maid's Chamber", self.player):
+                    coins += PAYROLL_COINS
+                    office_payroll += PAYROLL_COINS
+                if log_sources:
+                    coin_sources["Office Payroll"] = f"{office_payroll}"
+
+            if self.complex:
+                # TODO: Add logic for Office coin spread
+
+            
+                if state.can_reach_region("Tomb", self.player):
+                    deadends = state.count_from_list([x for x in rooms if rooms[x][ROOM_LAYOUT_TYPE_KEY] == ROOM_LAYOUT_TYPE_D and not rooms[x][OUTER_ROOM_KEY] and x not in core_rooms and x not in ["Mechanarium"]], self.player)
+                    coins += deadends * TOMB_SPREAD_COINS
+                    if log_sources:
+                        coin_sources["Tomb Spread"] = f"{deadends * TOMB_SPREAD_COINS}"
+
+                # Piety of the Bishop
+                if state.can_reach_region("Aries Court", self.player) and state.can_reach_region("Chapel", self.player):
+                    coins += PIETY_OF_THE_BISHOP_COINS
+                    if log_sources:
+                        coin_sources["Piety of the Bishop"] = f"{PIETY_OF_THE_BISHOP_COINS}"
+
+                if state.can_reach_region("Freezer", self.player):
+                    coins *= FREEZER_MULT
+                    if log_sources:
+                        coin_sources["Freezer Multiplier"] = f"x{FREEZER_MULT} multiplier"
+
+            if state.can_reach_location("First Pickup - COIN PURSE", self.player) and state.has("COIN PURSE", self.player):
+                if self.workshop and state.can_reach_location("First Pickup - Lucky Purse", self.player) and state.has("LUCKY PURSE", self.player):
+                    coins *= LUCKY_PURSE_MULT
+                    if log_sources:
+                        coin_sources["Lucky Purse Multiplier"] = f"x{LUCKY_PURSE_MULT} multiplier"
+                else:
+                    coins = int(coins * COIN_PURSE_MULT)
+                    if log_sources:
+                        coin_sources["Coin Purse Multiplier"] = f"x{COIN_PURSE_MULT} multiplier"
+            
+            return coins
+
+@dataclasses.dataclass()
+class ShowroomRule(Rule["BluePrinceWorld"], game="Blue Prince"):
+    """
+    Check if the player can get money to buy items from the Showroom.
+    """
+    amount: int
+
+    @override
+    def _instantiate(self, world: "BluePrinceWorld") -> Rule.Resolved:
+        return (
+            CanReachRegion("Showroom") & HasCoins(self.amount)
+        ).resolve(world)
+
+@dataclasses.dataclass()
+class CanReachItemLocationsFromList(Rule["BluePrinceWorld"], game="Blue Prince"):
+    """
+    Check if the player can reach at least count item locations from the list
+    """
+    targets: tuple[str, ...]
+    count : int = 1
+
+    def __init__(self, 
+                *targets: str,
+                count: int = 1,
+                options: Iterable[OptionFilter] = (),
+                filtered_resolution: bool = False):
+        super().__init__(options=options, filtered_resolution=filtered_resolution)
+        self.targets = tuple(sorted(set(targets)))
+        self.count = count
+
+    @override
+    def _instantiate(self, world: "BluePrinceWorld") -> Rule.Resolved:
+        if len(self.targets) == 0:
+            return False_().resolve(world)
+        if len(self.targets) == 1:
+            return CanReachItemLocation(self.targets[0]).resolve(world)
+        
+        return self.Resolved(self.targets, self.count, player=world.player)
+    
+    class Resolved(Rule.Resolved):
+        targets: tuple[str, ...]
+        count : int = 1
+
+        @override
+        def _evaluate(self, state: CollectionState) -> bool:
+            from .data_other_locations import locations, armory_items
+            reachable_count = 0
+            
+            for target in self.targets:
+                loc_name = target + "First Pickup - "
+                if loc_name in locations:
+                    if IMPLEMENTATION_STATUS in locations[loc_name] and locations[loc_name][IMPLEMENTATION_STATUS] == NOT_IMPLEMENTED:
+                        if LOCATION_RULE_SIMPLE_COMMON in locations[loc_name]:
+                            return (CanReachRegion(locations[loc_name][LOCATION_ROOM_KEY]) & locations[loc_name][LOCATION_RULE_SIMPLE_COMMON]).resolve(state.multiworld.worlds[self.player])
+                        else:
+                            reachable_count += 1
+                    elif state.has(target, self.player) and state.can_reach_location(loc_name, self.player):
+                        reachable_count += 1
+                elif target in armory_items:
+                    if (state.has(target, self.player) and state.can_reach_region("The Armory", self.player)):
+                        reachable_count += 1
+                else:
+                    for location, data in locations.items():
+                        if LOCATION_ITEM_KEY in data and data[LOCATION_ITEM_KEY] == target:
+                            if LOCATION_ITEM_KEY in data and data[LOCATION_ITEM_KEY] == target:
+                                if IMPLEMENTATION_STATUS in data and data[IMPLEMENTATION_STATUS] == NOT_IMPLEMENTED:
+                                    if LOCATION_RULE_SIMPLE_COMMON in data:
+                                        if (CanReachRegion(data[LOCATION_ROOM_KEY]) & data[LOCATION_RULE_SIMPLE_COMMON]).resolve(state.multiworld.worlds[self.player])._evaluate(state):
+                                            reachable_count += 1
+                                        break
+                                    reachable_count += 1
+                                    break
+                            if (state.has(target, self.player) and state.can_reach_location(location, self.player)):
+                                reachable_count += 1
+                                break
+
+                if reachable_count >= self.count:
+                    return True
+
+            return False
+        
+@dataclasses.dataclass()
+class CanReachRegionsFromList(Rule["BluePrinceWorld"], game="Blue Prince"):
+    """
+    Check if the player can reach at least count regions from the list
+    """
+    targets: tuple[str, ...]
+    count : int = 1
+
+    def __init__(
+            self,
+            *targets: str,
+            count: int = 1,
+            options: Iterable[OptionFilter] = (),
+            filtered_resolution: bool = False,
+        ) -> None:
+        super().__init__(options=options, filtered_resolution=filtered_resolution)
+        self.targets = tuple(sorted(set(targets)))
+        self.count = count
+
+    @override
+    def _instantiate(self, world: "BluePrinceWorld") -> Rule.Resolved:
+        if len(self.targets) == 0:
+            return False_().resolve(world)
+        if len(self.targets) == 1:
+            return CanReachRegion(self.targets[0]).resolve(world)
+        if self.count == 1:
+            return Or(*[CanReachRegion(target) for target in self.targets]).resolve(world)
+        return self.Resolved(self.targets, self.count, player=world.player)
+        
+    class Resolved(Rule.Resolved):
+        targets: tuple[str, ...]
+        count : int = 1
+
+        @override
+        def _evaluate(self, state: CollectionState) -> bool:
+            reachable_count = 0
+            for target in self.targets:
+                if state.can_reach_region(target, self.player):
+                    reachable_count += 1
+
+                if reachable_count >= self.count:
+                    return True
+
+            return False
+
+@dataclasses.dataclass()
+class SledgeHammerNotFromToolshedRule(Rule["BluePrinceWorld"], game="Blue Prince"):
+    """
+    Check if Sledge Hammer pickup can be reached at any region besides toolshed
+    """
+
+    @override
+    def _instantiate(self, world: "BluePrinceWorld") -> Rule.Resolved:
+        return And(
+            Has("SLEDGE HAMMER"),
+            Or(
+                *[CanReachRegion(region) for region in [
+                    "Attic",
+                    "Closet",
+                    "Courtyard",
+                    "Greenhouse",
+                    "Storeroom",
+                    "Veranda",
+                    "Workshop",
+                    "Wine Cellar",
+                    "Secret Garden",
+                    "Tunnel",
+                    "Commissary",
+                ]], 
+                Or(
+                    *[CanReachRegion(region) for region in [
+                        "Spare Room",
+                        "Garage",
+                        "Music Room",
+                        "Utility Closet",
+                    ]],
+                    CanReachRegion("Trophy Room", options=[OptionFilter(TrophySanity, True)]),
+                    options=rare_logic_filter
+                ),
+                AdvancedExperimentRule(),
+                SpiralOfStarsRule(),
+                UpgradedRoomRule("Mail Room", "Freight Mail"),
+                UpgradedRoomRule("Spare Room", "Spare Foyer"),
+                UpgradedRoomRule("Spare Room", "Spare Hall")
+            )
+        ).resolve(world)
+
+prev_combo : set[tuple[str, ...]] = set()
+@dataclasses.dataclass()
+class ComboItemRule(Rule["BluePrinceWorld"], game="Blue Prince"):
+    """
+    Checks if the listed items are reachable, taking into account that you will mostly never get more than one of them in the same room
+    """
+
+    items: tuple[str, ...]
+
+    def __init__(
+            self, 
+            *items: str,
+            options: Iterable[OptionFilter] = (),
+            filtered_resolution: bool = False):
+        super().__init__(options=options, filtered_resolution=filtered_resolution)
+        self.items = items
+
+    @override
+    def _instantiate(self, world: "BluePrinceWorld") -> Rule.Resolved:
+        if self.items in prev_combo:
+            return False_().resolve(world)
+        prev_combo.add(self.items)
+        res = self.Resolved(self.items, rare_logic=(world.options.item_logic_mode.value > 0), trophy_sanity=world.options.trophy_sanity.value, player=world.player)
+        prev_combo.remove(self.items)
+        return res
+
+    class Resolved(Rule.Resolved):
+        items: tuple[str, ...]
+        rare_logic: bool = False
+        trophy_sanity: bool = False
+
+        
+        def all_sets_reachable(self, reachable_sets: list[set[str]]):
+            if any(len(s) == 0 for s in reachable_sets):
+                return False
+
+            n = len(reachable_sets)
+
+            safe_candidates = []
+            for S in reachable_sets:
+                safe = set()
+                for x in S:
+                    if all((T - {x}) for T in reachable_sets):
+                        safe.add(x)
+                safe_candidates.extend(safe)
+
+            if any(len(c) == 0 for c in safe_candidates):
+                return False
+
+            # Bipartite matching
+            match = {}
+
+            def dfs(set_index, visited):
+                for x in safe_candidates: 
+                    if x in visited:
+                        continue
+                    visited.add(x)
+
+                    if x not in match or dfs(match[x], visited):
+                        match[x] = set_index
+                        return True
+
+                return False
+
+            for i in range(n):
+                if not dfs(i, set()):
+                    return False
+
+            return True
+
+
+        def _check_reachable(self, world: "BluePrinceWorld", state: CollectionState) -> dict[str, set[str]]:
+            """
+            Compute all regions where each owned item can be obtained,
+            """
+            res = defaultdict(set)
+
+            def add_if_reachable(item: str, regions: list[str]):
+                for r in regions:
+                    if state.can_reach_region(r, self.player):
+                        res[item].add(r)
+
+            def check_rule(item: str, region_name: str, rule_callable):
+                if rule_callable(state):
+                    res[item].add(region_name)
+
+            base_regions = {
+                "SLEDGE HAMMER": [
+                    "Attic", "Closet", "Courtyard", "Greenhouse", "Storeroom",
+                    "Veranda", "Workshop", "Wine Cellar", "Secret Garden", "Tunnel",
+                    "Toolshed", "Commissary",
+                ],
+                "BROKEN LEVER": [
+                    "Aquarium", "Attic", "Cloister", "Drafting Studio", "Laboratory",
+                    "Locker Room", "Observatory", "Patio", "Sauna", "Security",
+                    "Storeroom", "Weight Room", "Wine Cellar", "Workshop",
+                    "Secret Garden", "Conservatory",
+                ],
+                "BATTERY PACK": [
+                    "Attic", "Archives", "Courtyard", "Laboratory", "Mail Room",
+                    "Patio", "Storeroom", "Wine Cellar", "Workshop", "Clock Tower",
+                    "Toolshed", "Hovel",
+                ],
+            }
+
+            rare_regions = {
+                "SLEDGE HAMMER": ["Spare Room", "Garage", "Music Room", "Utility Closet"],
+                "BROKEN LEVER": ["Spare Room", "Billiard Room", "Garage", "Utility Closet", "Kitchen"],
+                "BATTERY PACK": ["Spare Room", "Garage", "Utility Closet", "Kitchen"],
+            }
+
+            global_rules = {
+                "BROKEN LEVER": [
+                    ("Dark Room", DarkRoomRule().resolve(world)),
+                    ("Advanced Experiment", AdvancedExperimentRule().resolve(world)),
+                    ("Sheltered Furnace", And(ShelteredRule(), CanReachRegion("Furnace")).resolve(world)),
+                ],
+                "BATTERY PACK": [
+                    ("Dark Room", DarkRoomRule().resolve(world)),
+                    ("Car Trunk", CarTrunkRule().resolve(world)),
+                    ("Advanced Experiment", AdvancedExperimentRule().resolve(world)),
+                    ("Sheltered Furnace", And(ShelteredRule(), CanReachRegion("Furnace")).resolve(world)),
+                ],
+                "SLEDGE HAMMER": [
+                    ("Spiral of Stars", SpiralOfStarsRule().resolve(world)),
+                    ("Freight Mail", UpgradedRoomRule("Mail Room", "Freight Mail").resolve(world)),
+                    ("Spare Foyer", UpgradedRoomRule("Spare Room", "Spare Foyer").resolve(world)),
+                    ("Spare Hall", UpgradedRoomRule("Spare Room", "Spare Hall").resolve(world)),
+                    ("Advanced Experiment", AdvancedExperimentRule().resolve(world)),
+                    ("Sheltered Furnace", And(ShelteredRule(), CanReachRegion("Furnace")).resolve(world)),
+                ],
+            }
+
+            # Item-specific rare logic rules
+            rare_rule_additions = {
+                "SLEDGE HAMMER": [
+                    ("Trophy Room", lambda s: self.trophy_sanity and s.can_reach_region("Trophy Room", self.player)),
+                ],
+                "BROKEN LEVER": [
+                    ("Dig Spot", DigSpotRule().resolve(world)),
+                ],
+            }
+
+            additional_rules = {
+                "BROKEN LEVER": [
+                    ("Spare Greenroom", UpgradedRoomRule("Spare Room", "Spare Greenroom").resolve(world)),
+                ],
+                "BATTERY PACK": [
+                    ("Mechanarium", MechanariumDoorRule(3).resolve(world)),
+                    ("Spare Patio", UpgradedRoomRule("Patio", "Spare Patio").resolve(world)),
+                ],
+            }
+
+            trading_post_rules = {
+                "SLEDGE HAMMER": TradingPostRule("SLEDGE HAMMER").resolve(world),
+                "BATTERY PACK": TradingPostRule("BATTERY PACK").resolve(world),
+            }
+
+            for item in base_regions:
+                if item not in self.items:
+                    continue
+
+                # Base locations
+                add_if_reachable(item, base_regions[item])
+
+                # Rare locations
+                if self.rare_logic and item in rare_regions:
+                    add_if_reachable(item, rare_regions[item])
+
+                # Rare extra rules
+                for region_name, rule_fn in rare_rule_additions.get(item, []):
+                    if self.rare_logic:
+                        check_rule(item, region_name, rule_fn)
+
+                # Item‑specific global rules
+                for region_name, rule_fn in global_rules.get(item, []):
+                    check_rule(item, region_name, rule_fn)
+
+                # Additional rules (Mechanarium, Spare Greenroom, etc.)
+                for region_name, rule_fn in additional_rules.get(item, []):
+                    check_rule(item, region_name, rule_fn)
+
+                if item in trading_post_rules:
+                    check_rule(item, "Trading Post Trade", trading_post_rules[item])
+
+            return res
+
+        @override
+        def _evaluate(self, state: CollectionState) -> bool:
+            world = state.multiworld.worlds[self.player]
+            if not And(*[CanReachItemLocation(x) for x in self.items]).resolve(world)(state): # type: ignore
+                return False
+            reachable = self._check_reachable(world, state) # type: ignore
+            return self.all_sets_reachable([v for _, v in reachable.items()])
+
+prev_commissary : set[str] = set()
+@dataclasses.dataclass()
+class CommissaryRule(Rule["BluePrinceWorld"], game="Blue Prince"):
+    """
+    Checks if the item can be purchased from the commissary
+    """
+
+    item: str
+    cost: int
+
+    @override
+    def _instantiate(self, world: "BluePrinceWorld") -> Rule.Resolved:
+        selections = {
+            "A": {"MAGNIFYING GLASS", "SHOVEL"},
+            "B": {"SALT SHAKER", "SHOVEL"},
+            "C": {"SALT SHAKER", "COMPASS", "SHOVEL", "SLEDGE HAMMER"},
+            "D": {"MAGNIFYING GLASS", "SLEDGE HAMMER", "SLEEPING MASK", "RUNNING SHOES"},
+            "E": {"SALT SHAKER", "SLEDGE HAMMER", "METAL DETECTOR"},
+            "F": {"SLEDGE HAMMER", "RUNNING SHOES"},
+            "G": {"SALT SHAKER", "SHOVEL", "SLEEPING MASK", "METAL DETECTOR"}
+        }
+
+        if "Upgrade Disk" in self.item:
+            rule = True_()
+
+            for _, select in selections.items():
+                rule &= Or(*[CanReachItemLocation(s) for s in select])
+
+            return And(HasCoins(self.cost), rule).resolve(world)
+        
+        prev_commissary.add(self.item)
+        rule = False_()
+
+        for _, select in selections.items():
+            if self.item not in select:
+                continue
+            
+            cur = True_()
+
+            for s in select:
+                if s == self.item or s in prev_commissary:
+                    continue
+
+                cur &= Has(s)
+            
+            rule |= cur
+        
+        prev_commissary.remove(self.item)
+        
+        return And(HasCoins(self.cost), rule).resolve(world)
